@@ -1,0 +1,8 @@
+id,parent,value
+root,,
+A,root,10
+B,root,20
+A1,A,5
+A2,A,5
+B1,B,10
+B2,B,10
