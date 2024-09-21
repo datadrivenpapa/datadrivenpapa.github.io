@@ -55,7 +55,7 @@ d3.csv("data.csv").then(data => {
       tooltip.transition()
         .duration(200)
         .style("opacity", .9);
-      tooltip.html(`ID: ${d.data.id}<br/>Value: ${d.value}`)
+      tooltip.html(d.data.tooltip || `${d.data.label}: ${d.value}`)
         .style("left", (event.pageX) + "px")
         .style("top", (event.pageY - 28) + "px");
     })
@@ -73,7 +73,7 @@ d3.csv("data.csv").then(data => {
     .append("text")
     .attr("transform", d => `translate(${arc.centroid(d)})rotate(${(d.x0 + d.x1) / 2 * 180 / Math.PI - 90})`)
     .attr("dy", "0.35em")
-    .text(d => d.data.id)
+    .text(d => d.data.label)
     .attr("text-anchor", "middle")
     .style("font-size", "10px")
     .style("fill", "white");
