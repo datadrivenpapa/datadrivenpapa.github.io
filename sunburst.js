@@ -1,31 +1,22 @@
-// Set up dimensions
+// Set the dimensions and margins of the graph
 const width = 932;
 const height = width;
 const radius = width / 6;
 
-// Create the SVG container
-const svg = d3.select("#chart")
-  .append("svg")
-  .attr("viewBox", [0, 0, width, width])
-  .style("font", "10px sans-serif");
+// Create the color scale
+const color = d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow, 10));
 
-// Create a group for the chart
-const g = svg.append("g")
-  .attr("transform", `translate(${width / 2},${width / 2})`);
+// Create the pie layout and arc generator
+const partition = data => {
+  const root = d3.hierarchy(data)
+      .sum(d => d.value)
+      .sort((a, b) => b.value - a.value);
+  return d3.partition()
+      .size([2 * Math.PI, root.height + 1])
+    (root);
+}
 
-// Create a tooltip
-const tooltip = d3.select("body").append("div")
-  .attr("class", "tooltip")
-  .style("opacity", 0);
-
-// Global variables for path and label
-let path, label;
-
-// Load and process the data
-d3.csv("data.csv").then(data => {
-  const root = partition(data);
-  
-  const arc = d3.arc()
+const arc = d3.arc()
     .startAngle(d => d.x0)
     .endAngle(d => d.x1)
     .padAngle(d => Math.min((d.x1 - d.x0) / 2, 0.005))
@@ -33,10 +24,26 @@ d3.csv("data.csv").then(data => {
     .innerRadius(d => d.y0 * radius)
     .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1));
 
-  const color = d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow, data.length + 1));
+// Create the SVG container
+const svg = d3.select("#chart")
+  .append("svg")
+    .attr("viewBox", [0, 0, width, height])
+    .style("font", "10px sans-serif");
 
-  // Create paths
-  path = g.append("g")
+// Create a group for the chart
+const g = svg.append("g")
+    .attr("transform", `translate(${width / 2},${height / 2})`);
+
+// Load the data
+d3.csv("data.csv").then(function(csvData) {
+  // Process the CSV data into a hierarchical structure
+  const data = stratify(csvData);
+
+  const root = partition(data);
+
+  root.each(d => d.current = d);
+
+  const path = g.append("g")
     .selectAll("path")
     .data(root.descendants().slice(1))
     .join("path")
@@ -44,43 +51,31 @@ d3.csv("data.csv").then(data => {
       .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.6 : 0.4) : 0)
       .attr("d", d => arc(d.current));
 
-  // Add interactivity to paths
-  path.on("mouseover", (event, d) => {
-      tooltip.transition()
-        .duration(200)
-        .style("opacity", .9);
-      tooltip.html(d.data.tooltip)
-        .style("left", (event.pageX) + "px")
-        .style("top", (event.pageY - 28) + "px");
-    })
-    .on("mouseout", () => {
-      tooltip.transition()
-        .duration(500)
-        .style("opacity", 0);
-    })
-    .on("click", clicked);
+  path.filter(d => d.children)
+      .style("cursor", "pointer")
+      .on("click", clicked);
 
-  // Create labels
-  label = g.append("g")
-    .attr("pointer-events", "none")
-    .attr("text-anchor", "middle")
-    .attr("font-size", 10)
-    .attr("fill-opacity", 0.6)
+  path.append("title")
+      .text(d => d.data.tooltip);
+
+  const label = g.append("g")
+      .attr("pointer-events", "none")
+      .attr("text-anchor", "middle")
+      .style("user-select", "none")
     .selectAll("text")
     .data(root.descendants().slice(1))
     .join("text")
-      .attr("transform", d => labelTransform(d.current))
       .attr("dy", "0.35em")
-      .text(d => d.data.label)
-      .attr("fill-opacity", d => +labelVisible(d.current));
+      .attr("fill-opacity", d => +labelVisible(d.current))
+      .attr("transform", d => labelTransform(d.current))
+      .text(d => d.data.label);
 
-  // Create center circle
-  g.append("circle")
-    .datum(root)
-    .attr("r", radius)
-    .attr("fill", "none")
-    .attr("pointer-events", "all")
-    .on("click", clicked);
+  const parent = g.append("circle")
+      .datum(root)
+      .attr("r", radius)
+      .attr("fill", "none")
+      .attr("pointer-events", "all")
+      .on("click", clicked);
 
   function clicked(event, p) {
     parent.datum(p.parent || root);
@@ -95,21 +90,21 @@ d3.csv("data.csv").then(data => {
     const t = g.transition().duration(750);
 
     path.transition(t)
-      .tween("data", d => {
-        const i = d3.interpolate(d.current, d.target);
-        return t => d.current = i(t);
-      })
+        .tween("data", d => {
+          const i = d3.interpolate(d.current, d.target);
+          return t => d.current = i(t);
+        })
       .filter(function(d) {
         return +this.getAttribute("fill-opacity") || arcVisible(d.target);
       })
-      .attr("fill-opacity", d => arcVisible(d.target) ? (d.children ? 0.6 : 0.4) : 0)
-      .attrTween("d", d => () => arc(d.current));
+        .attr("fill-opacity", d => arcVisible(d.target) ? (d.children ? 0.6 : 0.4) : 0)
+        .attrTween("d", d => () => arc(d.current));
 
     label.filter(function(d) {
       return +this.getAttribute("fill-opacity") || labelVisible(d.target);
     }).transition(t)
-      .attr("fill-opacity", d => +labelVisible(d.target))
-      .attrTween("transform", d => () => labelTransform(d.current));
+        .attr("fill-opacity", d => +labelVisible(d.target))
+        .attrTween("transform", d => () => labelTransform(d.current));
   }
   
   function arcVisible(d) {
@@ -126,17 +121,10 @@ d3.csv("data.csv").then(data => {
     return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
   }
 
-  function partition(data) {
-    const root = d3.stratify()
+  function stratify(data) {
+    const stratifier = d3.stratify()
       .id(d => d.id)
-      .parentId(d => d.parent)
-      (data)
-      .sum(d => d.value)
-      .sort((a, b) => b.value - a.value);
-    return d3.partition()
-      .size([2 * Math.PI, root.height + 1])
-      (root);
+      .parentId(d => d.parent);
+    return stratifier(data);
   }
-}).catch(error => {
-  console.error("Error loading the CSV file:", error);
 });
