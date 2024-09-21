@@ -71,27 +71,16 @@
             .innerRadius(d => d.y0)
             .outerRadius(d => d.y1 - 1);
 
-        // Create zoom behavior
-        const zoom = d3.zoom()
-            .scaleExtent([1, 8])
-            .on("zoom", zoomed);
-
-        // Apply zoom behavior to SVG
-        svg.call(zoom);
-
         // Load and process data
         d3.csv("data.csv").then(data => {
-            const root = d3.stratify()
+            const root = d3.hierarchy(d3.stratify()
                 .id(d => d.id)
-                .parentId(d => d.parent)
-                (data)
+                .parentId(d => d.parent)(data))
                 .sum(d => +d.value)
                 .sort((a, b) => b.value - a.value);
 
-            // Apply partition layout
             partition(root);
 
-            // Create and update chart elements
             const path = svg.selectAll("path")
                 .data(root.descendants().filter(d => d.depth))
                 .enter().append("path")
@@ -112,44 +101,52 @@
                 })
                 .on("click", clicked);
 
-            // Add labels
             const label = svg.selectAll("text")
                 .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
                 .enter().append("text")
-                .attr("transform", labelTransform)
+                .attr("transform", d => {
+                    const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+                    const y = (d.y0 + d.y1) / 2;
+                    return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+                })
                 .attr("dy", "0.35em")
                 .text(d => d.data.label)
                 .style("font-size", "10px")
                 .style("text-anchor", "middle")
                 .style("fill", "#fff");
 
-            // Zoom functionality
             function clicked(event, p) {
-                svg.transition().duration(750).call(
-                    zoom.transform,
-                    d3.zoomIdentity
-                        .translate(width / 2, height / 2)
-                        .scale(radius / p.y1)
-                        .translate(-(p.x0 + p.x1) / 2, -p.y0)
-                );
-            }
+                parent.datum(p.parent || root);
 
-            function zoomed(event) {
-                const { transform } = event;
-                path.attr("transform", transform).attr("d", arc);
-                label.attr("transform", d => labelTransform(d, transform));
-            }
+                root.each(d => (d.target = {
+                    x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * (2 * Math.PI),
+                    x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * (2 * Math.PI),
+                    y0: Math.max(0, d.y0 - p.depth),
+                    y1: Math.max(0, d.y1 - p.depth)
+                }));
 
-            function labelTransform(d, transform) {
-                const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                const y = (d.y0 + d.y1) / 2;
-                const t = transform || d3.zoomIdentity;
-                const scale = t.k || 1;
-                return `translate(${t.x + scale * y * Math.cos((x - 90) * Math.PI / 180)},${t.y + scale * y * Math.sin((x - 90) * Math.PI / 180)}) rotate(${x - 90})`;
+                const t = svg.transition().duration(750);
+
+                path.transition(t).tween("data", function(d) {
+                    const i = d3.interpolate(this.current, d.target);
+                    this.current = i(1);
+                    return t => this.setAttribute("d", arc(i(t)));
+                });
+
+                label.filter(function(d) { return +this.getAttribute('fill-opacity') || labelVisible(d.target); })
+                    .transition(t)
+                    .attrTween("transform", function(d) { return () => labelTransform(d.target); })
+                    .attr("fill-opacity", function(d) { return +labelVisible(d.target); });
             }
 
             function labelVisible(d) {
                 return (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
+            }
+
+            function labelTransform(d) {
+                const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+                const y = (d.y0 + d.y1) / 2;
+                return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
             }
         });
     </script>
