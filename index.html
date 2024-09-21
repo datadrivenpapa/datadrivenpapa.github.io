@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Zoomable Sunburst Chart</title>
+    <title>Zoomable Sunburst Chart</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             display: flex;
-            flex-direction: column;
+            justify-content: center;
             align-items: center;
+            height: 100vh;
             background-color: #f0f0f0;
         }
         #chart {
@@ -29,35 +30,11 @@
             font-size: 12px;
             pointer-events: none;
         }
-        #breadcrumb {
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-        #breadcrumb span {
-            cursor: pointer;
-            color: #0066cc;
-        }
-        #breadcrumb span:hover {
-            text-decoration: underline;
-        }
-        #resetZoom {
-            margin-bottom: 10px;
-            padding: 5px 10px;
-            background-color: #0066cc;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        #resetZoom:hover {
-            background-color: #0052a3;
-        }
     </style>
 </head>
 <body>
-    <div id="breadcrumb"></div>
-    <button id="resetZoom">Reset Zoom</button>
     <div id="chart"></div>
+
     <script>
         // Set up dimensions
         const width = 800;
@@ -94,14 +71,84 @@
             .innerRadius(d => d.y0)
             .outerRadius(d => d.y1 - 1);
 
-        let root;
-        let currentNode;
-
         // Load and process data
         d3.csv("data.csv").then(data => {
-            root = d3.stratify()
+            const root = d3.stratify()
                 .id(d => d.id)
                 .parentId(d => d.parent)
-    <script src="treemap.js"></script>
+                (data)
+                .sum(d => +d.value)
+                .sort((a, b) => b.value - a.value);
+
+            // Apply partition layout
+            partition(root);
+
+            // Create and update chart elements
+            const path = svg.selectAll("path")
+                .data(root.descendants().filter(d => d.depth))
+                .enter().append("path")
+                .attr("fill", d => color((d.children ? d : d.parent).data.id))
+                .attr("d", arc)
+                .on("mouseover", (event, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    tooltip.html(d.data.tooltip)
+                        .style("left", (event.pageX) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .on("click", clicked);
+
+            // Add labels
+            const label = svg.selectAll("text")
+                .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
+                .enter().append("text")
+                .attr("transform", d => {
+                    const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+                    const y = (d.y0 + d.y1) / 2;
+                    return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+                })
+                .attr("dy", "0.35em")
+                .text(d => d.data.label)
+                .style("font-size", "10px")
+                .style("text-anchor", "middle")
+                .style("fill", "#fff");
+
+            // Zoom functionality
+            function clicked(event, p) {
+                svg.transition().duration(750).tween("scale", () => {
+                    const xd = d3.interpolate(path.node().__zoom.x, p.x0);
+                    const yd = d3.interpolate(path.node().__zoom.y, p.y0);
+                    const zd = d3.interpolate(path.node().__zoom.k, radius / p.y1);
+                    return t => {
+                        path.node().__zoom = {x: xd(t), y: yd(t), k: zd(t)};
+                        update();
+                    };
+                });
+            }
+
+            function update() {
+                const t = svg.transition().duration(750);
+                path.transition(t)
+                    .attrTween("d", d => () => arc(d));
+                label.transition(t)
+                    .attr("transform", d => {
+                        const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+                        const y = (d.y0 + d.y1) / 2;
+                        return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+                    })
+                    .style("opacity", d => +labelVisible(d));
+            }
+
+            function labelVisible(d) {
+                return (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
+            }
+        });
+    </script>
 </body>
 </html>
