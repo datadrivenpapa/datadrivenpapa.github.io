@@ -2,8 +2,17 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>D3 Sunburst Chart</title>
+  <title>D3 Sunburst Chart with Tooltip, Zoom, and Labels</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ddd;
+      padding: 10px;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
   <div id="chart"></div>
