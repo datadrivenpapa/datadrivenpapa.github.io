@@ -18,6 +18,9 @@ const tooltip = d3.select("body").append("div")
   .attr("class", "tooltip")
   .style("opacity", 0);
 
+// Global variables for path and label
+let path, label;
+
 // Load and process the data
 d3.csv("data.csv").then(data => {
   const root = partition(data);
@@ -32,28 +35,33 @@ d3.csv("data.csv").then(data => {
 
   const color = d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow, data.length + 1));
 
-  g.append("g")
+  // Create paths
+  path = g.append("g")
     .selectAll("path")
     .data(root.descendants().slice(1))
     .join("path")
       .attr("fill", d => { while (d.depth > 1) d = d.parent; return color(d.data.id); })
       .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.6 : 0.4) : 0)
-      .attr("d", d => arc(d.current))
-      .on("mouseover", (event, d) => {
-        tooltip.transition()
-          .duration(200)
-          .style("opacity", .9);
-        tooltip.html(d.data.tooltip)
-          .style("left", (event.pageX) + "px")
-          .style("top", (event.pageY - 28) + "px");
-      })
-      .on("mouseout", () => {
-        tooltip.transition()
-          .duration(500)
-          .style("opacity", 0);
-      });
+      .attr("d", d => arc(d.current));
 
-  g.append("g")
+  // Add interactivity to paths
+  path.on("mouseover", (event, d) => {
+      tooltip.transition()
+        .duration(200)
+        .style("opacity", .9);
+      tooltip.html(d.data.tooltip)
+        .style("left", (event.pageX) + "px")
+        .style("top", (event.pageY - 28) + "px");
+    })
+    .on("mouseout", () => {
+      tooltip.transition()
+        .duration(500)
+        .style("opacity", 0);
+    })
+    .on("click", clicked);
+
+  // Create labels
+  label = g.append("g")
     .attr("pointer-events", "none")
     .attr("text-anchor", "middle")
     .attr("font-size", 10)
@@ -66,6 +74,7 @@ d3.csv("data.csv").then(data => {
       .text(d => d.data.label)
       .attr("fill-opacity", d => +labelVisible(d.current));
 
+  // Create center circle
   g.append("circle")
     .datum(root)
     .attr("r", radius)
@@ -128,4 +137,6 @@ d3.csv("data.csv").then(data => {
       .size([2 * Math.PI, root.height + 1])
       (root);
   }
+}).catch(error => {
+  console.error("Error loading the CSV file:", error);
 });
