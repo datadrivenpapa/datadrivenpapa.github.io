@@ -82,7 +82,7 @@
             partition(root);
 
             const path = svg.selectAll("path")
-                .data(root.descendants().filter(d => d.depth))
+                .data(root.descendants().slice(1))
                 .enter().append("path")
                 .attr("fill", d => color((d.children ? d : d.parent).data.id))
                 .attr("d", arc)
@@ -90,7 +90,7 @@
                     tooltip.transition()
                         .duration(200)
                         .style("opacity", 0.9);
-                    tooltip.html(d.data.tooltip)
+                    tooltip.html(d.data.data.tooltip)
                         .style("left", (event.pageX) + "px")
                         .style("top", (event.pageY - 28) + "px");
                 })
@@ -102,41 +102,39 @@
                 .on("click", clicked);
 
             const label = svg.selectAll("text")
-                .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
+                .data(root.descendants().slice(1))
                 .enter().append("text")
-                .attr("transform", d => {
-                    const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                    const y = (d.y0 + d.y1) / 2;
-                    return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
-                })
+                .attr("transform", d => labelTransform(d))
                 .attr("dy", "0.35em")
-                .text(d => d.data.label)
+                .text(d => d.data.data.label)
                 .style("font-size", "10px")
                 .style("text-anchor", "middle")
-                .style("fill", "#fff");
+                .style("fill", "#fff")
+                .style("opacity", d => +labelVisible(d));
 
             function clicked(event, p) {
                 parent.datum(p.parent || root);
 
-                root.each(d => (d.target = {
-                    x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * (2 * Math.PI),
-                    x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * (2 * Math.PI),
+                root.each(d => d.target = {
+                    x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
+                    x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
                     y0: Math.max(0, d.y0 - p.depth),
                     y1: Math.max(0, d.y1 - p.depth)
-                }));
+                });
 
                 const t = svg.transition().duration(750);
 
-                path.transition(t).tween("data", function(d) {
-                    const i = d3.interpolate(this.current, d.target);
-                    this.current = i(1);
-                    return t => this.setAttribute("d", arc(i(t)));
-                });
+                path.transition(t)
+                    .tween("data", d => {
+                        const i = d3.interpolate(d.current, d.target);
+                        return t => d.current = i(t);
+                    })
+                    .attr("d", d => arc(d.current));
 
-                label.filter(function(d) { return +this.getAttribute('fill-opacity') || labelVisible(d.target); })
+                label.filter(function(d) { return +this.style.opacity || labelVisible(d.target); })
                     .transition(t)
-                    .attrTween("transform", function(d) { return () => labelTransform(d.target); })
-                    .attr("fill-opacity", function(d) { return +labelVisible(d.target); });
+                    .style("opacity", d => +labelVisible(d.target))
+                    .attrTween("transform", d => () => labelTransform(d.current));
             }
 
             function labelVisible(d) {
@@ -145,7 +143,7 @@
 
             function labelTransform(d) {
                 const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                const y = (d.y0 + d.y1) / 2;
+                const y = (d.y0 + d.y1) / 2 * radius;
                 return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
             }
         });
