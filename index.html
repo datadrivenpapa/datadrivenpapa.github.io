@@ -1,148 +1,123 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoomable Sunburst Diagram</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f0f0f0;
-        }
-        #chart {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-    </style>
+  <meta charset="utf-8">
+  <title>D3 zoomable sunburst v4/v5</title>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
+
 <body>
-    <div id="chart"></div>
+  <div id="d3Graph4me"></div>
+  <script>
+  // 1. 描画用のデータ準備
+  var width = 800;
+  var height = 600;
+  var radius = Math.min(width, height) / 2;
+  var centerRadius = 0.4 * radius;
+  var backCircleRadius = 0.1 * radius;
 
-    <script>
-        // CSVデータを読み込む関数
-        async function loadCSV() {
-            const response = await fetch('data.csv');
-            const text = await response.text();
-            return d3.csvParse(text);
-        }
+  // 2. SVG表示用要素の設定
+  var svg = d3.select("#d3Graph4me").append("svg").attr("width", width).attr("height", height);
+  var g = svg.append("g").attr("transform", "translate(" + width / 2 + "," + (height / 2) + ")");
 
-        // Sunburst Diagramを描画する関数
-        function createSunburst(data) {
-            const width = 932;
-            const radius = width / 2;
+  // 3. 描画用スケールの設定
+  var colorScale = d3.scaleOrdinal().range([
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
+  ]);
+  var xScale = d3.scaleLinear().range([0, 2 * Math.PI]);
+  var rScale = d3.scaleLinear().range([0.4 * radius, radius]);
 
-            const arc = d3.arc()
-                .startAngle(d => d.x0)
-                .endAngle(d => d.x1)
-                .padAngle(d => Math.min((d.x1 - d.x0) / 2, 0.005))
-                .padRadius(radius / 2)
-                .innerRadius(d => d.y0)
-                .outerRadius(d => d.y1 - 1);
+  // CSVファイルを読み込む
+  d3.csv("data.csv").then(function(csvData) {
+    // CSVデータを階層構造に変換
+    var stratify = d3.stratify()
+      .id(function(d) { return d.id; })
+      .parentId(function(d) { return d.parentId; });
 
-            const partition = data => d3.partition()
-                .size([2 * Math.PI, radius])
-                (d3.hierarchy(data)
-                    .sum(d => d.value)
-                    .sort((a, b) => b.value - a.value));
+    var root = stratify(csvData)
+      .sum(function(d) { return +d.size || 1; })
+      .sort(function(a, b) { return b.height - a.height || b.value - a.value; });
 
-            const root = partition(data);
+    // 4. 描画用のデータ変換
+    var partition = d3.partition();
+    partition(root);
 
-            const color = d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow, data.children.length + 1));
+    // 5. SVG要素の設定
+    var arc = d3.arc()
+      .startAngle(function(d) { return Math.max(0, Math.min(2 * Math.PI, xScale(d.x0))); })
+      .endAngle(function(d) { return Math.max(0, Math.min(2 * Math.PI, xScale(d.x1))); })
+      .innerRadius(function(d) { return Math.max(0, rScale(d.y0)); })
+      .outerRadius(function(d) { return Math.max(0, rScale(d.y1)); });
 
-            const svg = d3.select("#chart")
-                .append("svg")
-                .attr("viewBox", `${-width / 2} ${-width / 2} ${width} ${width}`)
-                .style("max-width", `${width}px`)
-                .style("font", "10px sans-serif");
+    g.selectAll("path")
+      .data(root.descendants())
+      .enter()
+      .append("path")
+      .attr("d", arc)
+      .attr('stroke', '#fff')
+      .attr("fill", function(d) {
+        while(d.depth > 1) d = d.parent;
+        if(d.depth == 0) return "lightgray";
+        return colorScale(d.value);
+      })
+      .attr("opacity", 0.8)
+      .on("click", click)
+      .append("title")
+      .text(function(d) { return d.data.name + "\n" + d.value; });
 
-            svg.append("g")
-                .selectAll("path")
-                .data(root.descendants().filter(d => d.depth))
-                .join("path")
-                .attr("fill", d => { while (d.depth > 1) d = d.parent; return color(d.data.name); })
-                .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.6 : 0.4) : 0)
-                .attr("d", d => arc(d.current));
+    g.selectAll("text")
+      .data(root.descendants())
+      .enter()
+      .append("text")
+      .attr("fill", "black")
+      .attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; })
+      .attr("dy", "5px")
+      .attr("font", "10px")
+      .attr("text-anchor", "middle")
+      .on("click", click)
+      .text(function(d) { return d.data.name; });
 
-            svg.append("g")
-                .attr("pointer-events", "none")
-                .attr("text-anchor", "middle")
-                .attr("font-size", 10)
-                .attr("fill-opacity", 0.6)
-                .selectAll("text")
-                .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
-                .join("text")
-                .attr("transform", function(d) {
-                    const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                    const y = (d.y0 + d.y1) / 2;
-                    return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
-                })
-                .attr("dy", "0.35em")
-                .text(d => d.data.name);
-
-            svg.on("click", (event, p) => {
-                root.each(d => d.target = {
-                    x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-                    x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-                    y0: Math.max(0, d.y0 - p.depth),
-                    y1: Math.max(0, d.y1 - p.depth)
-                });
-
-                const t = svg.transition().duration(750);
-
-                svg.selectAll("path")
-                    .transition(t)
-                    .tween("data", d => {
-                        const i = d3.interpolate(d.current, d.target);
-                        return t => d.current = i(t);
-                    })
-                    .filter(function(d) {
-                        return +this.getAttribute("fill-opacity") || arcVisible(d.target);
-                    })
-                    .attr("fill-opacity", d => arcVisible(d.target) ? (d.children ? 0.6 : 0.4) : 0)
-                    .attrTween("d", d => () => arc(d.current));
-
-                svg.selectAll("text")
-                    .filter(function(d) {
-                        return +this.getAttribute("fill-opacity") || labelVisible(d.target);
-                    })
-                    .transition(t)
-                    .attr("fill-opacity", d => +labelVisible(d.target))
-                    .attrTween("transform", d => () => labelTransform(d.current));
-            });
-
-            function arcVisible(d) {
-                return d.y1 <= 3 && d.y0 >= 1 && d.x1 > d.x0;
-            }
-
-            function labelVisible(d) {
-                return d.y1 <= 3 && d.y0 >= 1 && (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03;
-            }
-
-            function labelTransform(d) {
-                const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                const y = (d.y0 + d.y1) / 2;
-                return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
-            }
-        }
-
-        // CSVデータを読み込み、Sunburst Diagramを描画
-        loadCSV().then(csvData => {
-            // CSVデータを階層構造に変換
-            const root = {
-                name: "root",
-                children: d3.group(csvData, d => d.parent, d => d.id)
-            };
-
-            createSunburst(root);
+    //6. クリック時のイベント関数
+    function click(d) {
+      var tween = g.transition()
+        .duration(500)
+        .tween("scale", function() {
+          var xdomain = d3.interpolate(xScale.domain(), [d.x0, d.x1]);
+          var ydomain = d3.interpolate(rScale.domain(), [d.y0, 1]);
+          var yrange = d3.interpolate(rScale.range(), [d.y0 ? backCircleRadius : centerRadius, radius]);
+          return function(t) {
+            xScale.domain(xdomain(t));
+            rScale.domain(ydomain(t)).range(yrange(t));
+          };
         });
-    </script>
+
+      tween.selectAll("path")
+        .attrTween("d", function(d) {
+          return function() {
+            return arc(d);
+          };
+        });
+
+      tween.selectAll("text")
+        .attrTween("transform", function(d) {
+          return function() {
+            return "translate(" + arc.centroid(d) + ")";
+          };
+        })
+        .attrTween("opacity", function(d) {
+          return function() {
+            return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? 1.0 : 0;
+          };
+        })
+        .attrTween("font", function(d) {
+          return function() {
+            return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? "10px" : 1e-6;
+          };
+        });
+    }
+  });
+  </script>
 </body>
+
 </html>
