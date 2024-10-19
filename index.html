@@ -1,127 +1,120 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>Zoomable Sunburst</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        #chart {
-            width: 100%;
-            height: 100vh;
-        }
-    </style>
+  <meta charset="utf-8">
+  <title>D3 Zoomable Sunburst from CSV</title>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <style>
+    body { margin: 0; }
+  </style>
 </head>
 <body>
-    <div id="chart"></div>
-    <script>
-        // CSVファイルを読み込む関数
-        function loadCSV(callback) {
-            d3.csv("data.csv").then(function(data) {
-                callback(data);
-            }).catch(function(error) {
-                console.error("CSVファイルの読み込みに失敗しました:", error);
-            });
-        }
+  <div id="chart"></div>
+  <script>
+    // CSVデータを直接文字列として定義
+    const csvData = `id,parent,name,value
+0,,Root,
+1,0,Category A,
+2,0,Category B,
+3,0,Category C,
+4,1,Subcategory A1,10
+5,1,Subcategory A2,15
+6,2,Subcategory B1,20
+7,2,Subcategory B2,25
+8,3,Subcategory C1,30
+9,3,Subcategory C2,35
+10,4,Item A1-1,5
+11,4,Item A1-2,5
+12,5,Item A2-1,7
+13,5,Item A2-2,8
+14,6,Item B1-1,10
+15,6,Item B1-2,10
+16,7,Item B2-1,12
+17,7,Item B2-2,13
+18,8,Item C1-1,15
+19,8,Item C1-2,15
+20,9,Item C2-1,17
+21,9,Item C2-2,18`;
 
-        // データを階層構造に変換する関数
-        function createHierarchy(data) {
-            const root = { name: "root", children: [] };
-            const dataMap = new Map();
+    // SVGの設定
+    const width = 800;
+    const height = 800;
+    const radius = Math.min(width, height) / 2;
 
-            data.forEach(d => {
-                d.size = +d.size;
-                dataMap.set(d.id, d);
-            });
+    const svg = d3.select("#chart")
+      .append("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .append("g")
+      .attr("transform", `translate(${width / 2},${height / 2})`);
 
-            data.forEach(d => {
-                const parent = dataMap.get(d.parentId) || root;
-                if (!parent.children) parent.children = [];
-                parent.children.push(d);
-            });
+    // カラースケールの設定
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-            return d3.hierarchy(root);
-        }
+    // パーティションレイアウトの設定
+    const partition = d3.partition()
+      .size([2 * Math.PI, radius]);
 
-        // メイン関数
-        function createChart() {
-            loadCSV(function(csvData) {
-                const width = window.innerWidth;
-                const height = window.innerHeight;
-                const radius = Math.min(width, height) / 2;
+    // アーク生成関数の設定
+    const arc = d3.arc()
+      .startAngle(d => d.x0)
+      .endAngle(d => d.x1)
+      .innerRadius(d => d.y0)
+      .outerRadius(d => d.y1);
 
-                const hierarchyData = createHierarchy(csvData);
+    // CSVデータの解析と階層構造の作成
+    d3.csvParse(csvData, d3.autoType).then(data => {
+      const root = d3.stratify()
+        .id(d => d.id)
+        .parentId(d => d.parent)
+        (data)
+        .sum(d => d.value)
+        .sort((a, b) => b.value - a.value);
 
-                const color = d3.scaleOrdinal(d3.quantize(d3.interpolateRainbow, hierarchyData.children.length + 1));
+      // パーティションレイアウトの適用
+      partition(root);
 
-                const partition = data => d3.partition()
-                    .size([2 * Math.PI, radius])
-                    (d3.hierarchy(data)
-                        .sum(d => d.size)
-                        .sort((a, b) => b.value - a.value));
+      // パスの描画
+      const path = svg.selectAll("path")
+        .data(root.descendants().filter(d => d.depth))
+        .enter().append("path")
+        .attr("d", arc)
+        .style("fill", d => color((d.children ? d : d.parent).data.name))
+        .style("opacity", 0.8)
+        .style("stroke", "white")
+        .style("stroke-width", "0.5px")
+        .on("click", click);
 
-                const arc = d3.arc()
-                    .startAngle(d => d.x0)
-                    .endAngle(d => d.x1)
-                    .padAngle(d => Math.min((d.x1 - d.x0) / 2, 0.005))
-                    .padRadius(radius / 2)
-                    .innerRadius(d => d.y0)
-                    .outerRadius(d => d.y1 - 1);
+      // テキストラベルの追加
+      const text = svg.selectAll("text")
+        .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
+        .enter().append("text")
+        .attr("transform", function(d) {
+          const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+          const y = (d.y0 + d.y1) / 2;
+          return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+        })
+        .attr("dy", "0.35em")
+        .text(d => d.data.name)
+        .style("font-size", "10px")
+        .style("text-anchor", "middle")
+        .style("fill", "white");
 
-                const root = partition(hierarchyData);
+      // クリックイベントハンドラ
+      function click(p) {
+        svg.transition().duration(750).tween("scale", function() {
+          const xd = d3.interpolate(x.domain(), [p.x0, p.x1]),
+                yd = d3.interpolate(y.domain(), [p.y0, 1]),
+                yr = d3.interpolate(y.range(), [p.y0 ? 20 : 0, radius]);
+          return t => { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
+        }).selectAll("path")
+          .attrTween("d", d => () => arc(d));
+      }
 
-                const svg = d3.select("#chart")
-                    .append("svg")
-                    .attr("viewBox", [-width / 2, -height / 2, width, height])
-                    .style("font", "10px sans-serif");
-
-                svg.append("g")
-                    .selectAll("path")
-                    .data(root.descendants().filter(d => d.depth))
-                    .join("path")
-                    .attr("fill", d => { while (d.depth > 1) d = d.parent; return color(d.data.name); })
-                    .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.6 : 0.4) : 0)
-                    .attr("d", d => arc(d.current));
-
-                svg.append("g")
-                    .attr("pointer-events", "none")
-                    .attr("text-anchor", "middle")
-                    .attr("font-size", 10)
-                    .attr("fill-opacity", 0.6)
-                    .selectAll("text")
-                    .data(root.descendants().filter(d => d.depth && (d.y0 + d.y1) / 2 * (d.x1 - d.x0) > 10))
-                    .join("text")
-                    .attr("transform", function(d) {
-                        const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
-                        const y = (d.y0 + d.y1) / 2;
-                        return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
-                    })
-                    .attr("dy", "0.35em")
-                    .text(d => d.data.name);
-
-                svg.on("click", clicked);
-
-                function clicked(event, p) {
-                    svg.transition().duration(750).tween("scale", () => {
-                        const xd = d3.interpolate(x.domain(), [p.x0, p.x1]);
-                        const yd = d3.interpolate(y.domain(), [p.y0, 1]);
-                        const yr = d3.interpolate(y.range(), [p.y0 ? 20 : 0, radius]);
-                        return t => { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
-                    }).selectAll("path")
-                    .attrTween("d", d => () => arc(d.current));
-                }
-
-                function arcVisible(d) {
-                    return d.y1 <= 3 && d.y0 >= 1 && d.x1 > d.x0;
-                }
-            });
-        }
-
-        createChart();
-    </script>
+      // スケールの設定
+      const x = d3.scaleLinear().range([0, 2 * Math.PI]);
+      const y = d3.scaleLinear().range([0, radius]);
+    });
+  </script>
 </body>
 </html>
