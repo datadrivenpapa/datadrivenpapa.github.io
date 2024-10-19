@@ -138,7 +138,7 @@
             // CSVデータを階層構造に変換
             const root = {
                 name: "root",
-                children: d3.group(csvData, d => d.category, d => d.subcategory)
+                children: d3.group(csvData, d => d.parent, d => d.id)
             };
 
             createSunburst(root);
