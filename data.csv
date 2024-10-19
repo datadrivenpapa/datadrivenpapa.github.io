@@ -1,4 +1,4 @@
-id,parent,value,label,tooltip
+id,parentId,size,name,tooltip
 root,,,"令和6年度当初予算
 一般会計
 歳出",
