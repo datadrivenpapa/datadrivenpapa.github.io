@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>D3 Zoomable Sunburst from CSV</title>
-  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
   <style>
     body { margin: 0; }
+    #chart { width: 100%; height: 100vh; }
   </style>
 </head>
 <body>
@@ -43,8 +44,7 @@
 
     const svg = d3.select("#chart")
       .append("svg")
-      .attr("width", width)
-      .attr("height", height)
+      .attr("viewBox", `0 0 ${width} ${height}`)
       .append("g")
       .attr("transform", `translate(${width / 2},${height / 2})`);
 
@@ -83,7 +83,7 @@
         .style("opacity", 0.8)
         .style("stroke", "white")
         .style("stroke-width", "0.5px")
-        .on("click", click);
+        .on("click", (event, d) => click(event, d));
 
       // テキストラベルの追加
       const text = svg.selectAll("text")
@@ -101,19 +101,23 @@
         .style("fill", "white");
 
       // クリックイベントハンドラ
-      function click(p) {
+      function click(event, d) {
+        const x = d3.scaleLinear().range([0, 2 * Math.PI]);
+        const y = d3.scaleRadial().range([0, radius]);
+
         svg.transition().duration(750).tween("scale", function() {
-          const xd = d3.interpolate(x.domain(), [p.x0, p.x1]),
-                yd = d3.interpolate(y.domain(), [p.y0, 1]),
-                yr = d3.interpolate(y.range(), [p.y0 ? 20 : 0, radius]);
-          return t => { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); };
+          const xd = d3.interpolate(x.domain(), [d.x0, d.x1]);
+          const yd = d3.interpolate(y.domain(), [d.y0, 1]);
+          const yr = d3.interpolate(y.range(), [d.y0 ? 20 : 0, radius]);
+          return t => {
+            x.domain(xd(t));
+            y.domain(yd(t)).range(yr(t));
+          };
         }).selectAll("path")
           .attrTween("d", d => () => arc(d));
       }
-
-      // スケールの設定
-      const x = d3.scaleLinear().range([0, 2 * Math.PI]);
-      const y = d3.scaleLinear().range([0, radius]);
+    }).catch(error => {
+      console.error("Error loading or parsing data:", error);
     });
   </script>
 </body>
