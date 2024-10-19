@@ -10,7 +10,7 @@
 <body>
   <div id="d3Graph4me"></div>
   <script>
-  // 1. 描画用のデータ準備
+  // 1. グローバル変数の設定
   var width = 800;
   var height = 600;
   var radius = Math.min(width, height) / 2;
@@ -28,22 +28,40 @@
   var xScale = d3.scaleLinear().range([0, 2 * Math.PI]);
   var rScale = d3.scaleLinear().range([0.4 * radius, radius]);
 
-  // CSVファイルを読み込む
-  d3.csv("data.csv").then(function(csvData) {
-    // CSVデータを階層構造に変換
-    var stratify = d3.stratify()
-      .id(function(d) { return d.id; })
-      .parentId(function(d) { return d.parentId; });
+  // 4. CSVデータを階層構造に変換する関数
+  function buildHierarchy(csv) {
+    var root = { id: "0", name: "root", children: [] };
+    var nodes = { "0": root };
 
-    var root = stratify(csvData)
-      .sum(function(d) { return +d.size || 1; })
+    csv.forEach(function(d) {
+      var node = {
+        id: d.id,
+        name: d.name,
+        value: +d.size,
+        tooltip: d.tooltip
+      };
+
+      nodes[d.id] = node;
+
+      var parent = nodes[d.parentId];
+      if (parent) {
+        if (!parent.children) parent.children = [];
+        parent.children.push(node);
+      }
+    });
+
+    return root;
+  }
+
+  // 5. CSVファイルの読み込みと描画
+  d3.csv("data.csv").then(function(data) {
+    var root = d3.hierarchy(buildHierarchy(data));
+    root.sum(function(d) { return d.value; })
       .sort(function(a, b) { return b.height - a.height || b.value - a.value; });
 
-    // 4. 描画用のデータ変換
     var partition = d3.partition();
     partition(root);
 
-    // 5. SVG要素の設定
     var arc = d3.arc()
       .startAngle(function(d) { return Math.max(0, Math.min(2 * Math.PI, xScale(d.x0))); })
       .endAngle(function(d) { return Math.max(0, Math.min(2 * Math.PI, xScale(d.x1))); })
@@ -64,7 +82,7 @@
       .attr("opacity", 0.8)
       .on("click", click)
       .append("title")
-      .text(function(d) { return d.data.name + "\n" + d.value; });
+      .text(function(d) { return d.data.name + "\n" + d.value + "\n" + (d.data.tooltip || ""); });
 
     g.selectAll("text")
       .data(root.descendants())
@@ -77,46 +95,46 @@
       .attr("text-anchor", "middle")
       .on("click", click)
       .text(function(d) { return d.data.name; });
-
-    //6. クリック時のイベント関数
-    function click(d) {
-      var tween = g.transition()
-        .duration(500)
-        .tween("scale", function() {
-          var xdomain = d3.interpolate(xScale.domain(), [d.x0, d.x1]);
-          var ydomain = d3.interpolate(rScale.domain(), [d.y0, 1]);
-          var yrange = d3.interpolate(rScale.range(), [d.y0 ? backCircleRadius : centerRadius, radius]);
-          return function(t) {
-            xScale.domain(xdomain(t));
-            rScale.domain(ydomain(t)).range(yrange(t));
-          };
-        });
-
-      tween.selectAll("path")
-        .attrTween("d", function(d) {
-          return function() {
-            return arc(d);
-          };
-        });
-
-      tween.selectAll("text")
-        .attrTween("transform", function(d) {
-          return function() {
-            return "translate(" + arc.centroid(d) + ")";
-          };
-        })
-        .attrTween("opacity", function(d) {
-          return function() {
-            return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? 1.0 : 0;
-          };
-        })
-        .attrTween("font", function(d) {
-          return function() {
-            return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? "10px" : 1e-6;
-          };
-        });
-    }
   });
+
+  // 6. クリック時のイベント関数
+  function click(d) {
+    var tween = g.transition()
+      .duration(500)
+      .tween("scale", function() {
+        var xdomain = d3.interpolate(xScale.domain(), [d.x0, d.x1]);
+        var ydomain = d3.interpolate(rScale.domain(), [d.y0, 1]);
+        var yrange = d3.interpolate(rScale.range(), [d.y0 ? backCircleRadius : centerRadius, radius]);
+        return function(t) {
+          xScale.domain(xdomain(t));
+          rScale.domain(ydomain(t)).range(yrange(t));
+        };
+      });
+
+    tween.selectAll("path")
+      .attrTween("d", function(d) {
+        return function() {
+          return arc(d);
+        };
+      });
+
+    tween.selectAll("text")
+      .attrTween("transform", function(d) {
+        return function() {
+          return "translate(" + arc.centroid(d) + ")";
+        };
+      })
+      .attrTween("opacity", function(d) {
+        return function() {
+          return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? 1.0 : 0;
+        };
+      })
+      .attrTween("font", function(d) {
+        return function() {
+          return(xScale(d.x0) < 2 * Math.PI) && (xScale(d.x1) > 0.0) && (rScale(d.y1) > 0.0) ? "10px" : 1e-6;
+        };
+      });
+  }
   </script>
 </body>
 
